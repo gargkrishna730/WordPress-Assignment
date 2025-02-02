@@ -1,4 +1,4 @@
-name: WordPress Deployment
+name: 🚀 WordPress Deployment Pipeline
 
 on:
   push:
@@ -9,49 +9,136 @@ on:
       - '.github/workflows/**'
   pull_request:
     branches: [ master ]
-    paths:
-      - 'wordpress-project/**'
-      - 'config/nginx/**'
   schedule:
-    - cron: '0 0 * * 0'  # Run weekly for full security scanning
+    - cron: '0 0 * * 0'  # 📅 Weekly backup & security scan
+  workflow_dispatch:
+    inputs:
+      force_backup:
+        description: '🔄 Force database backup'
+        required: true
+        type: boolean
+        default: false
+      environment:
+        description: '🌍 Deployment Environment'
+        required: true
+        type: choice
+        options:
+          - production
+          - staging
+        default: 'production'
 
 jobs:
-  quick-analyze:
-    name: Quick Code Analysis
+  code-analysis:
+    name: 🔍 Code Analysis
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: 📥 Checkout Repository
         uses: actions/checkout@v2
 
-      - name: Setup PHP
+      - name: 🛠️ Setup PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.1'
-          tools: phpcs
+          tools: phpcs, phpmd, composer
 
-      - name: PHP Lint
+      - name: 📦 Install Dependencies
+        run: composer install --no-progress
+
+      - name: 🔎 PHP Lint
         run: |
           find wordpress-project -name "*.php" -exec php -l {} \;
 
-  deploy:
-    needs: quick-analyze
+      - name: 🧪 PHPCS Check
+        run: phpcs --standard=WordPress wordpress-project
+
+      - name: 🕵️ PHP Mess Detector
+        run: phpmd wordpress-project text cleancode,codesize,controversial,design,naming,unusedcode
+
+  check-changes:
+    name: 🔄 Check Changes
     runs-on: self-hosted
-    if: success()
+    outputs:
+      needs_backup: ${{ steps.check.outputs.needs_backup }}
     steps:
-      - uses: actions/checkout@v2
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - id: check
+        name: 🔎 Check for Database-Impacting Changes
+        run: |
+          git diff --name-only ${{ github.event.before }} ${{ github.sha }} > changed_files.txt
+          
+          if grep -q "wp-content/plugins/" changed_files.txt || \
+             grep -q "wp-admin/" changed_files.txt || \
+             [[ "${{ github.event.inputs.force_backup }}" == "true" ]] || \
+             [[ "${{ github.event_name }}" == "schedule" ]]; then
+            echo "needs_backup=true" >> $GITHUB_OUTPUT
+          else
+            echo "needs_backup=false" >> $GITHUB_OUTPUT
+          fi
+
+  backup-database:
+    name: 💾 Database Backup
+    needs: [code-analysis, check-changes]
+    if: needs.check-changes.outputs.needs_backup == 'true'
+    runs-on: self-hosted
+    steps:
+      - name: ⚙️ Configure AWS CLI
+        run: |
+          aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws configure set aws_secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws configure set default.region ${{ secrets.AWS_REGION }}
+
+      - name: 📦 Create Database Backup
+        run: |
+          BACKUP_DATE=$(date +%Y%m%d_%H%M%S)
+          BACKUP_FILE="wordpress_db_${BACKUP_DATE}.sql"
+          
+          mysqldump -u ${{ secrets.DB_USER }} -p${{ secrets.DB_PASSWORD }} wordpress > "/tmp/${BACKUP_FILE}"
+          gzip "/tmp/${BACKUP_FILE}"
+          
+          # Upload to S3 with standard server-side encryption
+          aws s3 cp "/tmp/${BACKUP_FILE}.gz" \
+            "s3://${{ secrets.S3_BUCKET }}/database-backups/${BACKUP_FILE}.gz" \
+            --sse AES256
+          
+          rm "/tmp/${BACKUP_FILE}.gz"
+          
+          # Keep only last 30 backups
+          aws s3 ls s3://${{ secrets.S3_BUCKET }}/database-backups/ \
+            | sort -r \
+            | tail -n +31 \
+            | awk '{print $4}' \
+            | xargs -I {} aws s3 rm s3://${{ secrets.S3_BUCKET }}/database-backups/{}
+          
+          echo "BACKUP_FILE=${BACKUP_FILE}.gz" >> $GITHUB_ENV
+
+  deploy:
+    name: 🚀 Deploy
+    needs: [code-analysis, backup-database]
+    if: success() && github.event.inputs.environment == 'production'
+    runs-on: self-hosted
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v2
         with:
           path: repo
-          fetch-depth: 0  # Needed for commit history
+          fetch-depth: 0
 
-      - name: 📝 Format Commit Message
-        id: format_commits
+      - name: 🔍 Verify WordPress Core
         run: |
-          cd repo
-          # Get only the current commit message
-          commit_message=$(git log -1 --pretty=format:"%s")
-          echo "FORMATTED_MESSAGES=* ${commit_message}" >> $GITHUB_ENV
+          cd repo/wordpress-project
+          wp core verify-checksums --allow-root || echo "Core verification failed"
 
-      - name: Deploy Changes
+      - name: 📋 Check Plugin Updates
+        run: |
+          cd /var/www/wordpress
+          wp plugin list --format=json > plugins.json
+          echo "PLUGINS_NEEDING_UPDATE=$(wp plugin list --update=available --format=count)" >> $GITHUB_ENV
+
+      - name: 🔄 Deploy Changes
         run: |
           # Copy theme and plugin changes
           sudo rsync -av --exclude='wp-config.php' \
@@ -68,111 +155,81 @@ jobs:
             sudo nginx -t && sudo systemctl restart nginx
           fi
 
-          # Set correct permissions
+          # Set permissions
           sudo chown -R www-data:www-data /var/www/wordpress
           sudo find /var/www/wordpress/ -type d -exec chmod 755 {} \;
           sudo find /var/www/wordpress/ -type f -exec chmod 644 {} \;
 
-          # Clean up
-          rm -rf repo
-
-      - name: 📧 Send Deployment Success Email
-        if: success()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 587
-          username: ${{ secrets.EMAIL_USERNAME }}
-          password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: "🚀 WordPress Deployment Successful - ${{ github.repository }}"
-          to: ${{ secrets.NOTIFICATION_EMAIL }}
-          from: WordPress CI/CD <${{ secrets.EMAIL_USERNAME }}>
-          html_body: |
-            <h2>🚀 WordPress Deployment Successful</h2>
-            <p>Your WordPress site has been successfully deployed.</p>
-
-            <h3>📝 Latest Change:</h3>
-            <ul>
-              <li><strong>Commit Message:</strong><br> ${{ env.FORMATTED_MESSAGES }}</li>
-              <li><strong>Commit Hash:</strong> <a href="https://github.com/${{ github.repository }}/commit/${{ github.sha }}"><code>${{ github.sha }}</code></a></li>
-              <li><strong>Branch:</strong> ${{ github.ref_name }}</li>
-              <li><strong>Repository:</strong> <a href="https://github.com/${{ github.repository }}">${{ github.repository }}</a></li>
-              <li><strong>Site URL:</strong> <a href="https://wordpressassignment.convertcurrency.online">https://wordpressassignment.convertcurrency.online</a></li>
-            </ul>
-
-            <h3>🔗 Quick Links:</h3>
-            <ul>
-              <li><a href="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}">View Workflow Run Logs</a></li>
-              <li><a href="https://github.com/${{ github.repository }}/commit/${{ github.sha }}">View Commit on GitHub</a></li>
-            </ul>
-
-            <hr>
-            <p style="font-size: small; color: gray;">This is an automated message from the WordPress CI/CD pipeline.</p>
-
-      - name: ⚠️ Send Deployment Failure Email
-        if: failure()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 587
-          username: ${{ secrets.EMAIL_USERNAME }}
-          password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: "🚨 WordPress Deployment Failed - ${{ github.repository }}"
-          to: ${{ secrets.NOTIFICATION_EMAIL }}
-          from: WordPress CI/CD <${{ secrets.EMAIL_USERNAME }}>
-          html_body: |
-            <h2>🚨 WordPress Deployment Failed</h2>
-            <p>The deployment of your WordPress site has failed. Please review the logs for more details.</p>
-
-            <h3>📝 Deployment Details:</h3>
-            <ul>
-              <li><strong>Commit Messages:</strong><br> ${{ env.FORMATTED_MESSAGES }}</li>
-              <li><strong>Commit Hash:</strong> <a href="https://github.com/${{ github.repository }}/commit/${{ github.sha }}"><code>${{ github.sha }}</code></a></li>
-              <li><strong>Branch:</strong> ${{ github.ref_name }}</li>
-              <li><strong>Repository:</strong> <a href="https://github.com/${{ github.repository }}">${{ github.repository }}</a></li>
-            </ul>
-
-            <h3>🔍 Troubleshooting</h3>
-            <p>View the <a href="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}">GitHub Actions logs</a> for details on the failure.</p>
-
-            <hr>
-            <p style="font-size: small; color: gray;">This is an automated message from the WordPress CI/CD pipeline.</p>
+          # Clean cache
+          wp cache flush --allow-root
+          wp rewrite flush --allow-root
 
   security-scan:
+    name: 🔒 Security Scan
     needs: deploy
     runs-on: ubuntu-latest
     steps:
-      - name: Run WPScan
+      - name: 🛠️ Install Security Tools
         run: |
-          # Install WPScan
           sudo gem install wpscan
+          sudo apt-get update && sudo apt-get install -y nmap nikto
 
-          # Run the scan and save to file
-          wpscan --url https://wordpressassignment.convertcurrency.online \
-            --format cli \
+      - name: 🔍 Run Security Scans
+        run: |
+          wpscan --url ${{ secrets.SITE_URL }} \
+            --format cli-no-color \
             --random-user-agent \
+            --detection-mode aggressive \
             --output scan-results.txt
 
-          # Convert to HTML
-          echo "<html><head><title>WPScan Results</title>" > scan-results.html
-          echo "<style>
-            body { font-family: Arial, sans-serif; margin: 20px; }
-            h1 { color: #2c3e50; }
-            .warning { color: #e74c3c; }
-            .info { color: #3498db; }
-            pre { background: #f8f9fa; padding: 15px; border-radius: 5px; }
-          </style></head><body>" >> scan-results.html
-          echo "<h1>WPScan Security Report</h1>" >> scan-results.html
-          echo "<h2>Scan Date: $(date)</h2>" >> scan-results.html
-          echo "<h2>Target: https://wordpressassignment.convertcurrency.online</h2>" >> scan-results.html
-          echo "<pre>" >> scan-results.html
-          cat scan-results.txt >> scan-results.html
-          echo "</pre></body></html>" >> scan-results.html
+          nmap -sV --script=http-wordpress-enum ${{ secrets.SITE_URL }} -oN nmap-results.txt
+          
+          nikto -h ${{ secrets.SITE_URL }} -Format txt -o nikto-results.txt
 
-      - name: Upload scan results
-        uses: actions/upload-artifact@v4
+      - name: 📊 Generate Security Report
+        run: |
+          echo "# 🔒 Security Scan Results" > security-report.md
+          echo "## 🔍 WPScan Results" >> security-report.md
+          cat scan-results.txt >> security-report.md
+          echo "## 🔍 Nmap Results" >> security-report.md
+          cat nmap-results.txt >> security-report.md
+          echo "## 🔍 Nikto Results" >> security-report.md
+          cat nikto-results.txt >> security-report.md
+
+  notify:
+    name: 📧 Notifications
+    needs: [deploy, security-scan]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: 📧 Send Status Email
+        uses: dawidd6/action-send-mail@v3
         with:
-          name: security-scan-results
-          path: |
-            scan-results.html
-            scan-results.txt 
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "🚀 WordPress Deployment Status - ${{ github.repository }}"
+          to: ${{ secrets.NOTIFICATION_EMAIL }}
+          from: WordPress CI/CD <${{ secrets.EMAIL_USERNAME }}>
+          html_body: |
+            <h2>🚀 WordPress Deployment Report</h2>
+            <p>Status: ${{ needs.deploy.result == 'success' && '✅ Success' || '❌ Failed' }}</p>
+            
+            <h3>📊 Deployment Details:</h3>
+            <ul>
+              <li>🌍 Environment: ${{ github.event.inputs.environment }}</li>
+              <li>💾 Backup Status: ${{ needs.backup-database.result }}</li>
+              <li>🔌 Plugins Needing Update: ${{ env.PLUGINS_NEEDING_UPDATE }}</li>
+              <li>🌿 Branch: ${{ github.ref_name }}</li>
+              <li>📝 Commit: <code>${{ github.sha }}</code></li>
+            </ul>
+            
+            <h3>🔒 Security Status:</h3>
+            <p>Scan Status: ${{ needs.security-scan.result == 'success' && '✅ Complete' || '⚠️ Failed' }}</p>
+            
+            <h3>🔗 Quick Links:</h3>
+            <ul>
+              <li>🌐 <a href="${{ secrets.SITE_URL }}">View Website</a></li>
+              <li>📋 <a href="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}">View Workflow Run</a></li>
+            </ul>
