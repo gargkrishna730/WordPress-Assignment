@@ -53,6 +53,7 @@ jobs:
 
   check-changes:
     name: 🔄 Check Changes
+    needs: [code-analysis]
     runs-on: self-hosted
     outputs:
       needs_backup: ${{ steps.check.outputs.needs_backup }}
