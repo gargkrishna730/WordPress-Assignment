@@ -59,23 +59,3 @@ h1, h2, h3, h4, h5, h6, blockquote, caption, figcaption, p {
 .more-link {
 	display: block;
 }
-/* Add this at the end of style.css */
-.wp-block-site-title {
-    background-color: #ffeb3b;
-    padding: 10px;
-    text-align: center;
-}
-
-/* Or add a custom banner */
-.wp-block-template-part-header {
-    position: relative;
-}
-
-.wp-block-template-part-header::before {
-    content: "CI/CD Test - Updated Successfully";
-    display: block;
-    background: #ffeb3b;
-    padding: 10px;
-    text-align: center;
-    font-weight: bold;
-}
