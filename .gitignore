@@ -1,0 +1,32 @@
+# WordPress core files
+wp-config.php
+wp-content/uploads/*
+wp-content/cache/*
+wp-content/upgrade/*
+wp-content/backup-db/*
+wp-content/backups/*
+wp-content/blogs.dir/*
+wp-content/upgrade/*
+
+# Configuration files with sensitive data
+.env
+*.log
+.htaccess
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfvars
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Add to your .gitignore
+.github/vpc-setup.yml

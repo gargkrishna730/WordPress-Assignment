@@ -1,0 +1,47 @@
+name: WordPress Deployment
+
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - 'wordpress-project/**'
+      - 'config/nginx/**'
+      - '.github/workflows/**'
+  pull_request:
+    branches: [ master ]
+    paths:
+      - 'wordpress-project/**'
+      - 'config/nginx/**'
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          path: repo
+
+      - name: Deploy Changes
+        run: |
+          # Copy theme and plugin changes
+          sudo rsync -av --exclude='wp-config.php' \
+              --exclude='wp-content/uploads' \
+              --exclude='.git' \
+              repo/wordpress-project/wp-content/themes/ /var/www/wordpress/wp-content/themes/
+          
+          sudo rsync -av --exclude='.git' \
+              repo/wordpress-project/wp-content/plugins/ /var/www/wordpress/wp-content/plugins/
+
+          # Update NGINX configuration if changed
+          if ! cmp -s repo/config/nginx/wordpress.conf /etc/nginx/sites-available/wordpress; then
+            sudo cp repo/config/nginx/wordpress.conf /etc/nginx/sites-available/wordpress
+            sudo nginx -t && sudo systemctl restart nginx
+          fi
+
+          # Set correct permissions
+          sudo chown -R www-data:www-data /var/www/wordpress
+          sudo find /var/www/wordpress/ -type d -exec chmod 755 {} \;
+          sudo find /var/www/wordpress/ -type f -exec chmod 644 {} \;
+
+          # Clean up
+          rm -rf repo
