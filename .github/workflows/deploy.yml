@@ -43,22 +43,13 @@ jobs:
           path: repo
           fetch-depth: 0  # Needed for commit history
 
-      - name: 📝 Format Commit Messages
+      - name: 📝 Format Commit Message
         id: format_commits
         run: |
           cd repo
-          commit_messages=$(git log ${GITHUB_SHA} --pretty=format:"%s")
-          formatted_messages=""
-
-          if [[ $(echo "$commit_messages" | wc -l) -eq 1 ]]; then
-            formatted_messages="* ${commit_messages}"
-          else
-            while IFS= read -r line; do
-              formatted_messages="${formatted_messages}* ${line}<br>"
-            done <<< "$commit_messages"
-          fi
-
-          echo "FORMATTED_MESSAGES=${formatted_messages}" >> $GITHUB_ENV
+          # Get only the current commit message
+          commit_message=$(git log -1 --pretty=format:"%s")
+          echo "FORMATTED_MESSAGES=* ${commit_message}" >> $GITHUB_ENV
 
       - name: Deploy Changes
         run: |
@@ -100,9 +91,9 @@ jobs:
             <h2>🚀 WordPress Deployment Successful</h2>
             <p>Your WordPress site has been successfully deployed.</p>
 
-            <h3>📝 Deployment Details:</h3>
+            <h3>📝 Latest Change:</h3>
             <ul>
-              <li><strong>Commit Messages:</strong><br> ${{ env.FORMATTED_MESSAGES }}</li>
+              <li><strong>Commit Message:</strong><br> ${{ env.FORMATTED_MESSAGES }}</li>
               <li><strong>Commit Hash:</strong> <a href="https://github.com/${{ github.repository }}/commit/${{ github.sha }}"><code>${{ github.sha }}</code></a></li>
               <li><strong>Branch:</strong> ${{ github.ref_name }}</li>
               <li><strong>Repository:</strong> <a href="https://github.com/${{ github.repository }}">${{ github.repository }}</a></li>
@@ -179,7 +170,7 @@ jobs:
           echo "</pre></body></html>" >> scan-results.html
 
       - name: Upload scan results
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: security-scan-results
           path: |
