@@ -68,18 +68,21 @@ jobs:
           rm -rf repo
 
   security-scan:
-    runs-on: ubuntu-latest  # Runs in parallel with deploy
+    runs-on: ubuntu-latest
     steps:
-      - name: WordPress Security Scan
-        uses: wpscanteam/wpscan-action@master
-        with:
-          url: https://wordpressassignment.convertcurrency.online
-          random_user_agent: true
-          format: json
-          output: wpscan-report.json
+      - name: Run WPScan
+        run: |
+          # Install WPScan
+          sudo gem install wpscan
+
+          # Run the scan and save to file
+          wpscan --url https://wordpressassignment.convertcurrency.online \
+            --format json \
+            --random-user-agent \
+            --output scan-results.json
 
       - name: Upload scan results
         uses: actions/upload-artifact@v4
         with:
           name: security-scan-results
-          path: wpscan-report.json 
+          path: scan-results.json 
