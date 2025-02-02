@@ -1,4 +1,4 @@
-name: 💾 WordPress Deployment
+name: WordPress Deployment
 
 on:
   push:
@@ -42,17 +42,19 @@ jobs:
         uses: actions/checkout@v2
         with:
           path: repo
-          fetch-depth: 0
+          fetch-depth: 0  # Needed for commit history
 
       - name: 📝 Format Commit Message
         id: format_commits
         run: |
           cd repo
+          # Get only the current commit message
           commit_message=$(git log -1 --pretty=format:"%s")
           echo "FORMATTED_MESSAGES=* ${commit_message}" >> $GITHUB_ENV
 
       - name: 🌐 Deploy Changes
         run: |
+          # Copy theme and plugin changes
           sudo rsync -av --exclude='wp-config.php' \
               --exclude='wp-content/uploads' \
               --exclude='.git' \
@@ -60,16 +62,19 @@ jobs:
           
           sudo rsync -av --exclude='.git' \
               repo/wordpress-project/wp-content/plugins/ /var/www/wordpress/wp-content/plugins/
-          
+
+          # Update NGINX configuration if changed
           if ! cmp -s repo/config/nginx/wordpress.conf /etc/nginx/sites-available/wordpress; then
             sudo cp repo/config/nginx/wordpress.conf /etc/nginx/sites-available/wordpress
             sudo nginx -t && sudo systemctl restart nginx
           fi
-          
+
+          # Set correct permissions
           sudo chown -R www-data:www-data /var/www/wordpress
           sudo find /var/www/wordpress/ -type d -exec chmod 755 {} \;
           sudo find /var/www/wordpress/ -type f -exec chmod 644 {} \;
-          
+
+          # Clean up
           rm -rf repo
 
       - name: 📧 Send Deployment Success Email
@@ -86,7 +91,24 @@ jobs:
           html_body: |
             <h2>🚀 WordPress Deployment Successful</h2>
             <p>Your WordPress site has been successfully deployed.</p>
-            <p>Site URL: <a href="${{ secrets.SITE_URL }}">${{ secrets.SITE_URL }}</a></p>
+
+            <h3>📝 Latest Change:</h3>
+            <ul>
+              <li><strong>Commit Message:</strong><br> ${{ env.FORMATTED_MESSAGES }}</li>
+              <li><strong>Commit Hash:</strong> <a href="https://github.com/${{ github.repository }}/commit/${{ github.sha }}"><code>${{ github.sha }}</code></a></li>
+              <li><strong>Branch:</strong> ${{ github.ref_name }}</li>
+              <li><strong>Repository:</strong> <a href="https://github.com/${{ github.repository }}">${{ github.repository }}</a></li>
+              <li><strong>Site URL:</strong> <a href="https://wordpressassignment.convertcurrency.online">https://wordpressassignment.convertcurrency.online</a></li>
+            </ul>
+
+            <h3>🔗 Quick Links:</h3>
+            <ul>
+              <li><a href="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}">View Workflow Run Logs</a></li>
+              <li><a href="https://github.com/${{ github.repository }}/commit/${{ github.sha }}">View Commit on GitHub</a></li>
+            </ul>
+
+            <hr>
+            <p style="font-size: small; color: gray;">This is an automated message from the WordPress CI/CD pipeline.</p>
 
       - name: ⚠️ Send Deployment Failure Email
         if: failure()
@@ -102,7 +124,20 @@ jobs:
           html_body: |
             <h2>🚨 WordPress Deployment Failed</h2>
             <p>The deployment of your WordPress site has failed. Please review the logs for more details.</p>
-            <p>Site URL: <a href="${{ secrets.SITE_URL }}">${{ secrets.SITE_URL }}</a></p>
+
+            <h3>📝 Deployment Details:</h3>
+            <ul>
+              <li><strong>Commit Messages:</strong><br> ${{ env.FORMATTED_MESSAGES }}</li>
+              <li><strong>Commit Hash:</strong> <a href="https://github.com/${{ github.repository }}/commit/${{ github.sha }}"><code>${{ github.sha }}</code></a></li>
+              <li><strong>Branch:</strong> ${{ github.ref_name }}</li>
+              <li><strong>Repository:</strong> <a href="https://github.com/${{ github.repository }}">${{ github.repository }}</a></li>
+            </ul>
+
+            <h3>🔍 Troubleshooting</h3>
+            <p>View the <a href="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}">GitHub Actions logs</a> for details on the failure.</p>
+
+            <hr>
+            <p style="font-size: small; color: gray;">This is an automated message from the WordPress CI/CD pipeline.</p>
 
   security-scan:
     needs: deploy
@@ -110,11 +145,16 @@ jobs:
     steps:
       - name: 🔒 Run WPScan
         run: |
+          # Install WPScan
           sudo gem install wpscan
-          wpscan --url ${{ secrets.SITE_URL }} \
+
+          # Run the scan and save to file
+          wpscan --url https://wordpressassignment.convertcurrency.online \
             --format cli \
             --random-user-agent \
             --output scan-results.txt
+
+          # Convert to HTML
           echo "<html><head><title>WPScan Results</title>" > scan-results.html
           echo "<style>
             body { font-family: Arial, sans-serif; margin: 20px; }
@@ -123,9 +163,9 @@ jobs:
             .info { color: #3498db; }
             pre { background: #f8f9fa; padding: 15px; border-radius: 5px; }
           </style></head><body>" >> scan-results.html
-          echo "<h1>⚡ WPScan Security Report</h1>" >> scan-results.html
+          echo "<h1>WPScan Security Report</h1>" >> scan-results.html
           echo "<h2>Scan Date: $(date)</h2>" >> scan-results.html
-          echo "<h2>Target: ${{ secrets.SITE_URL }}</h2>" >> scan-results.html
+          echo "<h2>Target: https://wordpressassignment.convertcurrency.online</h2>" >> scan-results.html
           echo "<pre>" >> scan-results.html
           cat scan-results.txt >> scan-results.html
           echo "</pre></body></html>" >> scan-results.html
@@ -136,4 +176,4 @@ jobs:
           name: security-scan-results
           path: |
             scan-results.html
-            scan-results.txt
+            scan-results.txt 
