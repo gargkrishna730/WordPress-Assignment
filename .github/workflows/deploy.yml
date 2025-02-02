@@ -12,10 +12,39 @@ on:
     paths:
       - 'wordpress-project/**'
       - 'config/nginx/**'
+  schedule:
+    - cron: '0 0 * * 0'  # Run weekly for security scanning
 
 jobs:
+  analyze:
+    name: Code Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          tools: phpcs, php-cs-fixer, phpmd
+
+      - name: PHP Lint
+        run: |
+          find wordpress-project -name "*.php" -exec php -l {} \;
+
+      - name: PHP Mess Detector
+        run: |
+          phpmd wordpress-project text cleancode,codesize,controversial,design,naming,unusedcode
+
+      - name: Check WordPress Coding Standards
+        run: |
+          phpcs --standard=WordPress wordpress-project
+
   deploy:
+    needs: analyze
     runs-on: self-hosted
+    if: success()
     steps:
       - uses: actions/checkout@v2
         with:
@@ -45,3 +74,30 @@ jobs:
 
           # Clean up
           rm -rf repo
+
+  security-scan:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: WordPress Security Scan
+        uses: wpscanteam/wpscan-action@master
+        with:
+          url: https://wordpressassignment.convertcurrency.online
+          random_user_agent: true
+          format: json
+          output: wpscan-report.json
+
+      - name: OWASP ZAP Scan
+        uses: zaproxy/action-baseline@v0.7.0
+        with:
+          target: 'https://wordpressassignment.convertcurrency.online'
+          rules_file_name: '.zap/rules.tsv'
+          cmd_options: '-a'
+
+      - name: Upload scan results
+        uses: actions/upload-artifact@v2
+        with:
+          name: security-scan-results
+          path: |
+            wpscan-report.json
+            zap-baseline-report.html 
