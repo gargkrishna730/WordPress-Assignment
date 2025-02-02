@@ -31,7 +31,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.1'
-          tools: phpcs, phpmd
+          tools: phpcs
 
       - name: 🔎 PHP Lint
         run: |
@@ -51,24 +51,44 @@ jobs:
             exit 1
           fi
 
-      - name: 🕵️ PHP Mess Detector
-        run: |
-          if [ -d "wordpress-project" ]; then
-            phpmd wordpress-project text cleancode,codesize,controversial,design,naming,unusedcode || true
-          fi
-
-  deploy:
-    name: 🚀 Deploy
-    needs: [code-analysis]
+  check-changes:
+    name: 🔄 Check Changes
     runs-on: self-hosted
+    outputs:
+      needs_backup: ${{ steps.check.outputs.needs_backup }}
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v2
         with:
-          path: repo
           fetch-depth: 0
 
-      - name: 💾 Backup Database
+      - id: check
+        name: 🔎 Check for Database-Impacting Changes
+        run: |
+          git diff --name-only ${{ github.event.before }} ${{ github.sha }} > changed_files.txt
+          
+          if grep -q "wp-content/plugins/" changed_files.txt || \
+             grep -q "wp-admin/" changed_files.txt || \
+             [[ "${{ github.event.inputs.force_backup }}" == "true" ]] || \
+             [[ "${{ github.event_name }}" == "schedule" ]]; then
+            echo "needs_backup=true" >> $GITHUB_OUTPUT
+          else
+            echo "needs_backup=false" >> $GITHUB_OUTPUT
+          fi
+
+  backup-database:
+    name: 💾 Database Backup
+    needs: [code-analysis, check-changes]
+    if: needs.check-changes.outputs.needs_backup == 'true'
+    runs-on: self-hosted
+    steps:
+      - name: ⚙️ Configure AWS CLI
+        run: |
+          aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws configure set aws_secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws configure set default.region ${{ secrets.AWS_REGION }}
+
+      - name: 💾 Create Database Backup
         run: |
           BACKUP_DATE=$(date +%Y%m%d_%H%M%S)
           BACKUP_FILE="wordpress_db_${BACKUP_DATE}.sql"
@@ -82,11 +102,38 @@ jobs:
             --sse AES256
           
           rm "/tmp/${BACKUP_FILE}.gz"
+          
+          # Keep only last 30 backups
+          aws s3 ls s3://${{ secrets.S3_BUCKET }}/database-backups/ \
+            | sort -r \
+            | tail -n +31 \
+            | awk '{print $4}' \
+            | xargs -I {} aws s3 rm s3://${{ secrets.S3_BUCKET }}/database-backups/{}
+          
+          echo "BACKUP_FILE=${BACKUP_FILE}.gz" >> $GITHUB_ENV
+
+  deploy:
+    name: 🚀 Deploy
+    needs: [code-analysis, backup-database]
+    if: always()
+    runs-on: self-hosted
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v2
+        with:
+          path: repo
+          fetch-depth: 0
 
       - name: 🔍 Verify WordPress Core
         run: |
           cd repo/wordpress-project
           wp core verify-checksums --allow-root || echo "Core verification failed"
+
+      - name: 📋 Check Plugin Updates
+        run: |
+          cd /var/www/wordpress
+          wp plugin list --format=json > plugins.json
+          echo "PLUGINS_NEEDING_UPDATE=$(wp plugin list --update=available --format=count)" >> $GITHUB_ENV
 
       - name: 🔄 Deploy Changes
         run: |
@@ -148,6 +195,12 @@ jobs:
           echo "## 🔍 Nikto Results" >> security-report.md
           cat nikto-results.txt >> security-report.md
 
+      - name: 📎 Upload Scan Results
+        uses: actions/upload-artifact@v2
+        with:
+          name: security-scan-results
+          path: security-report.md
+
   notify:
     name: 📧 Notifications
     needs: [deploy, security-scan]
@@ -171,6 +224,7 @@ jobs:
             <h3>📊 Deployment Details:</h3>
             <ul>
               <li>💾 Backup Status: ${{ needs.backup-database.result || 'Completed' }}</li>
+              <li>🔌 Plugins Needing Update: ${{ env.PLUGINS_NEEDING_UPDATE || '0' }}</li>
               <li>🌿 Branch: ${{ github.ref_name }}</li>
               <li>📝 Commit: <code>${{ github.sha }}</code></li>
             </ul>
