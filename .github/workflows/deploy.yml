@@ -68,6 +68,7 @@ jobs:
           rm -rf repo
 
   security-scan:
+    needs: deploy
     runs-on: ubuntu-latest
     steps:
       - name: Run WPScan
@@ -77,12 +78,30 @@ jobs:
 
           # Run the scan and save to file
           wpscan --url https://wordpressassignment.convertcurrency.online \
-            --format json \
+            --format cli \
             --random-user-agent \
-            --output scan-results.json
+            --output scan-results.txt
+
+          # Convert to HTML
+          echo "<html><head><title>WPScan Results</title>" > scan-results.html
+          echo "<style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            h1 { color: #2c3e50; }
+            .warning { color: #e74c3c; }
+            .info { color: #3498db; }
+            pre { background: #f8f9fa; padding: 15px; border-radius: 5px; }
+          </style></head><body>" >> scan-results.html
+          echo "<h1>WPScan Security Report</h1>" >> scan-results.html
+          echo "<h2>Scan Date: $(date)</h2>" >> scan-results.html
+          echo "<h2>Target: https://wordpressassignment.convertcurrency.online</h2>" >> scan-results.html
+          echo "<pre>" >> scan-results.html
+          cat scan-results.txt >> scan-results.html
+          echo "</pre></body></html>" >> scan-results.html
 
       - name: Upload scan results
         uses: actions/upload-artifact@v4
         with:
           name: security-scan-results
-          path: scan-results.json 
+          path: |
+            scan-results.html
+            scan-results.txt 
