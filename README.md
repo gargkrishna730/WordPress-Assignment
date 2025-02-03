@@ -21,16 +21,7 @@ This repository contains a WordPress website with automated deployment using Git
    cd WordPress-Assignment
    ```
 
-2. **Download WordPress**
-   ```bash
-   # Download latest WordPress
-   wget https://wordpress.org/latest.zip
-   unzip latest.zip
-   mv wordpress/* wordpress-project/
-   rm -rf wordpress latest.zip
-   ```
-
-3. **Set up Local Environment**
+2. **Set up Local Environment**
    ```bash
    # Copy sample config
    cp wordpress-project/wp-config-sample.php wordpress-project/wp-config.php
@@ -42,13 +33,13 @@ This repository contains a WordPress website with automated deployment using Git
    define('DB_HOST', 'localhost');
    ```
 
-4. **Create Local Database**
+3. **Create Local Database**
    ```bash
    mysql -u root -p
-   CREATE DATABASE wordpressassignment;
+   CREATE DATABASE your_local_db_name;
    ```
 
-5. **Set up Local Server**
+4. **Set up Local Server**
    ```bash
    # For PHP's built-in server (development only)
    cd wordpress-project
@@ -57,7 +48,7 @@ This repository contains a WordPress website with automated deployment using Git
    # Or configure Nginx/Apache to point to wordpress-project directory
    ```
 
-6. **Complete WordPress Installation**
+5. **Complete WordPress Installation**
    - Visit http://localhost:8000
    - Follow the WordPress installation wizard
    - Set up your admin account
