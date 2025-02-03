@@ -21,25 +21,58 @@ This repository contains a WordPress website with automated deployment using Git
    cd WordPress-Assignment
    ```
 
-2. **Set up Local Environment**
+2. **Install WordPress Core**
    ```bash
-   # Copy sample config
-   cp wordpress-project/wp-config-sample.php wordpress-project/wp-config.php
-   
-   # Update database credentials in wp-config.php
-   define('DB_NAME', 'your_local_db_name');
-   define('DB_USER', 'your_local_db_user');
-   define('DB_PASSWORD', 'your_local_db_password');
-   define('DB_HOST', 'localhost');
+   # Create a directory for WordPress project
+   mkdir wordpress-project
+   cd wordpress-project
+
+   # Download and extract WordPress core files
+   wget https://wordpress.org/latest.zip
+   unzip latest.zip
+   mv wordpress/* .
+   rm -rf wordpress latest.zip
    ```
 
-3. **Create Local Database**
+   This step is necessary because:
+   - We need the original WordPress core files
+   - wp-config-sample.php comes with the core files
+   - Core files contain essential WordPress functions and features
+   - Ensures we have a clean WordPress installation
+
+3. **Configure WordPress**
+   ```bash
+   # Copy WordPress sample configuration file
+   cp wp-config-sample.php wp-config.php
+   ```
+   
+   WordPress uses wp-config.php to connect to your database. Edit wp-config.php and update these values:
+   ```php
+   // ** Database settings - You can get this info from your web host ** //
+   define('DB_NAME', 'your_local_db_name');     // The name of your local database
+   define('DB_USER', 'your_local_db_user');     // Your local MySQL username
+   define('DB_PASSWORD', 'your_local_db_password'); // Your local MySQL password
+   define('DB_HOST', 'localhost');              // Usually localhost
+   
+   // ** Authentication Unique Keys and Salts ** //
+   // Generate these using: https://api.wordpress.org/secret-key/1.1/salt/
+   define('AUTH_KEY',         'put your unique phrase here');
+   define('SECURE_AUTH_KEY',  'put your unique phrase here');
+   define('LOGGED_IN_KEY',    'put your unique phrase here');
+   define('NONCE_KEY',        'put your unique phrase here');
+   define('AUTH_SALT',        'put your unique phrase here');
+   define('SECURE_AUTH_SALT', 'put your unique phrase here');
+   define('LOGGED_IN_SALT',   'put your unique phrase here');
+   define('NONCE_SALT',       'put your unique phrase here');
+   ```
+
+4. **Create Local Database**
    ```bash
    mysql -u root -p
    CREATE DATABASE your_local_db_name;
    ```
 
-4. **Set up Local Server**
+5. **Set up Local Server**
    ```bash
    # For PHP's built-in server (development only)
    cd wordpress-project
@@ -48,7 +81,7 @@ This repository contains a WordPress website with automated deployment using Git
    # Or configure Nginx/Apache to point to wordpress-project directory
    ```
 
-5. **Complete WordPress Installation**
+6. **Complete WordPress Installation**
    - Visit http://localhost:8000
    - Follow the WordPress installation wizard
    - Set up your admin account
