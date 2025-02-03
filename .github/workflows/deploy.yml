@@ -177,3 +177,8 @@ jobs:
           path: |
             scan-results.html
             scan-results.txt 
+
+      - name: 🌐 Display Site URL
+        run: |
+          echo "✨ Deployment and security scan completed!"
+          echo "🌍 Your site is available at: https://wordpressassignment.convertcurrency.online" 
