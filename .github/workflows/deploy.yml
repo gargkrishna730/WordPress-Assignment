@@ -181,4 +181,5 @@ jobs:
       - name: 🌐 Display Site URL
         run: |
           echo "✨ Deployment and security scan completed!"
-          echo "🌍 Your site is available at: https://wordpressassignment.convertcurrency.online" 
+          echo "::notice title=🌍 Site URL::https://wordpressassignment.convertcurrency.online"
+          echo "::notice::Visit your WordPress site at: https://wordpressassignment.convertcurrency.online" 
