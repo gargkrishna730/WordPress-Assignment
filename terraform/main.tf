@@ -158,6 +158,15 @@ resource "aws_security_group" "wordpress_sg" {
     description = "DNS UDP"
   }
 
+  # Add Memcached rule
+  ingress {
+    from_port   = 11211
+    to_port     = 11211
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]  # You might want to restrict this to your VPC CIDR
+    description = "Memcached"
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -225,5 +234,57 @@ resource "aws_eip" "wordpress_eip" {
 
   tags = {
     Name = "wordpress-eip"
+  }
+}
+
+# Create Elasticache subnet group
+resource "aws_elasticache_subnet_group" "memcached" {
+  name       = "wordpress-memcached-subnet"
+  subnet_ids = [aws_subnet.private_1.id, aws_subnet.private_2.id]
+
+  tags = {
+    Name = "wordpress-memcached-subnet-group"
+  }
+}
+
+# Create Elasticache security group
+resource "aws_security_group" "memcached_sg" {
+  name        = "wordpress-memcached-sg"
+  description = "Security group for Memcached cluster"
+  vpc_id      = aws_vpc.wordpress_vpc.id
+
+  ingress {
+    from_port       = 11211
+    to_port         = 11211
+    protocol        = "tcp"
+    security_groups = [aws_security_group.wordpress_sg.id]
+    description     = "Memcached from WordPress"
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "wordpress-memcached-sg"
+  }
+}
+
+# Create Elasticache cluster
+resource "aws_elasticache_cluster" "memcached" {
+  cluster_id           = "wordpress-memcached"
+  engine              = "memcached"
+  node_type           = "cache.t3.micro"
+  num_cache_nodes     = 1
+  parameter_group_name = "default.memcached1.6"
+  port                = 11211
+  security_group_ids  = [aws_security_group.memcached_sg.id]
+  subnet_group_name   = aws_elasticache_subnet_group.memcached.name
+
+  tags = {
+    Name = "wordpress-memcached"
   }
 } 
