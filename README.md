@@ -10,7 +10,6 @@ This repository contains a WordPress website with automated deployment using Git
 - PHP 8.1 or higher
 - MySQL 5.7 or higher
 - Nginx or Apache
-- Composer
 - Git
 - WP-CLI (optional but recommended)
 
@@ -22,7 +21,16 @@ This repository contains a WordPress website with automated deployment using Git
    cd WordPress-Assignment
    ```
 
-2. **Set up Local Environment**
+2. **Download WordPress**
+   ```bash
+   # Download latest WordPress
+   wget https://wordpress.org/latest.zip
+   unzip latest.zip
+   mv wordpress/* wordpress-project/
+   rm -rf wordpress latest.zip
+   ```
+
+3. **Set up Local Environment**
    ```bash
    # Copy sample config
    cp wordpress-project/wp-config-sample.php wordpress-project/wp-config.php
@@ -34,25 +42,25 @@ This repository contains a WordPress website with automated deployment using Git
    define('DB_HOST', 'localhost');
    ```
 
-3. **Create Local Database**
+4. **Create Local Database**
    ```bash
    mysql -u root -p
    CREATE DATABASE wordpressassignment;
    ```
 
-4. **Install Dependencies**
-   ```bash
-   cd wordpress-project
-   composer install
-   ```
-
 5. **Set up Local Server**
    ```bash
    # For PHP's built-in server (development only)
+   cd wordpress-project
    php -S localhost:8000
    
    # Or configure Nginx/Apache to point to wordpress-project directory
    ```
+
+6. **Complete WordPress Installation**
+   - Visit http://localhost:8000
+   - Follow the WordPress installation wizard
+   - Set up your admin account
 
 ## 🔄 GitHub Actions Workflow
 
